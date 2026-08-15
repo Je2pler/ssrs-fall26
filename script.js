@@ -194,8 +194,8 @@
         </div>
 
         <div class="field">
-          <label for="group-input">Gruppnummer</label>
-          <input id="group-input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="t.ex. 4" value="${esc(state.group)}" autocomplete="off" />
+          <label for="group-input">Lagnamn</label>
+          <input id="group-input" type="text" placeholder="t.ex. Falken" value="${esc(state.group)}" autocomplete="off" />
         </div>
 
         <div class="notice">
@@ -540,9 +540,7 @@
     const groupInput = document.getElementById("group-input");
     if (groupInput) {
       groupInput.addEventListener("input", (e) => {
-        const digitsOnly = e.target.value.replace(/[^0-9]/g, "");
-        if (digitsOnly !== e.target.value) e.target.value = digitsOnly;
-        state.group = digitsOnly;
+        state.group = e.target.value;
         saveState();
         const btn = document.getElementById("start-btn");
         if (btn) btn.disabled = !state.group.trim();
