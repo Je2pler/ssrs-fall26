@@ -102,6 +102,12 @@
     return TASKS[state.taskIndex];
   }
 
+  function getOrder(task) {
+    const stored = state.priorities[task.n];
+    if (stored && stored.length === 3) return stored;
+    return [1, 2, 3];
+  }
+
   function esc(str) {
     const div = document.createElement("div");
     div.textContent = str;
@@ -117,6 +123,9 @@
 
   // ---------- Timer engine ----------
   let timerInterval = null;
+
+  // ---------- Drag reorder engine ----------
+  let dragCtx = null;
 
   function startTimer(durationSeconds) {
     const endAt = Date.now() + durationSeconds * 1000;
@@ -179,14 +188,14 @@
     return `
       <div class="screen landing">
         <div class="brand">
-          <div class="brand-mark"></div>
+          <p class="brand-kicker">RS Uppsala</p>
           <h1>BONUS&nbsp;6</h1>
           <p>Sjöräddningsövning &middot; Prioriteringsscenario</p>
         </div>
 
         <div class="field">
           <label for="group-input">Gruppnummer</label>
-          <input id="group-input" type="text" inputmode="numeric" placeholder="t.ex. 4" value="${esc(state.group)}" autocomplete="off" />
+          <input id="group-input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="t.ex. 4" value="${esc(state.group)}" autocomplete="off" />
         </div>
 
         <div class="notice">
@@ -208,24 +217,36 @@
     `;
   }
 
-  function scenarioCard(s, rank) {
+  function rankItem(s, position) {
     const hasUpdate = !!s.update;
     return `
-      <button type="button" class="scenario ${rank ? "ranked" : ""}" data-scenario-id="${s.id}">
-        <span class="scenario-rank">${rank || ""}</span>
-        <p class="scenario-title">${esc(s.title)}<span class="scenario-id">Händelse ${s.id}</span></p>
-        <p class="scenario-text ${hasUpdate ? "updated" : ""}">${esc(s.text)}</p>
-        ${hasUpdate ? `<p class="scenario-update">${esc(s.update)}</p>` : ""}
-      </button>
+      <div class="rank-item" data-id="${s.id}">
+        <div class="rank-badge" aria-hidden="true">${position}</div>
+        <div class="rank-body">
+          <p class="scenario-title">${esc(s.title)}<span class="scenario-id">Händelse ${s.id}</span></p>
+          <p class="scenario-text ${hasUpdate ? "updated" : ""}">${esc(s.text)}</p>
+          ${hasUpdate ? `<p class="scenario-update">${esc(s.update)}</p>` : ""}
+        </div>
+        <div class="reorder-controls">
+          <button type="button" class="drag-handle" data-drag-handle aria-label="Dra ${esc(s.title)} för att ändra ordning">
+            <span class="grip-dots" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+            </span>
+          </button>
+          <div class="nudge-group">
+            <button type="button" class="nudge-btn" data-nudge="up" data-id="${s.id}" aria-label="Flytta upp" ${position === 1 ? "disabled" : ""}>▲</button>
+            <button type="button" class="nudge-btn" data-nudge="down" data-id="${s.id}" aria-label="Flytta ned" ${position === 3 ? "disabled" : ""}>▼</button>
+          </div>
+        </div>
+      </div>
     `;
   }
 
   function screenBrief() {
     const task = currentTask();
     const scenarios = currentScenarios();
-    const priorities = state.priorities[task.n] || [];
+    const order = getOrder(task);
     const remaining = remainingSeconds();
-    const allRanked = priorities.length === 3;
     const timerStopped = !state.timerRunning;
 
     const newInfoBlock = task.newInfo
@@ -249,26 +270,19 @@
           <div class="timer-value" data-timer-value>${formatTime(remaining)}</div>
         </div>
         <div class="timer-sub">${
-          timerStopped
-            ? allRanked
-              ? "Prioritering klar – tiden stoppad"
-              : "Tiden är ute"
-            : "Rangordna genom att trycka på händelserna, 1 → 2 → 3"
+          timerStopped ? "Tiden är ute" : "Dra i greppet för att ändra prioriteringsordning – högst upp går ni mot"
         }</div>
 
-        <div class="scenarios">
-          ${scenarios
-            .map((s) => {
-              const rank = priorities.indexOf(s.id) + 1;
-              return scenarioCard(s, rank > 0 ? rank : null);
-            })
+        <div class="scenarios" id="rank-list">
+          ${order
+            .map((id, i) => rankItem(scenarios.find((s) => s.id === id), i + 1))
             .join("")}
         </div>
 
         <div class="actions">
           <div class="actions-row">
-            <button class="btn-secondary" id="reset-rank-btn" ${priorities.length === 0 ? "disabled" : ""}>Rensa</button>
-            <button class="btn-primary" id="continue-brief-btn" ${allRanked ? "" : "disabled"}>Fortsätt</button>
+            <button class="btn-secondary" id="reset-rank-btn">Återställ ordning</button>
+            <button class="btn-primary" id="continue-brief-btn">Fortsätt</button>
           </div>
         </div>
       </div>
@@ -277,7 +291,7 @@
 
   function screenMotivation() {
     const task = currentTask();
-    const priorities = state.priorities[task.n] || [];
+    const priorities = getOrder(task);
     const motivation = state.motivations[task.n] || "";
     return `
       <div class="screen">
@@ -303,7 +317,7 @@
 
   function screenSend() {
     const task = currentTask();
-    const priorities = state.priorities[task.n] || [];
+    const priorities = getOrder(task);
     const motivation = state.motivations[task.n] || "";
     const message = buildMessage(task.n, state.group, priorities, motivation);
     const isLast = state.taskIndex === TASKS.length - 1;
@@ -332,7 +346,7 @@
 
   function screenDone() {
     const items = TASKS.map((t) => {
-      const priorities = state.priorities[t.n] || [];
+      const priorities = getOrder(t);
       const motivation = state.motivations[t.n] || "";
       return `
         <div class="recap-item">
@@ -393,11 +407,142 @@
     }
   }
 
+  function nudgePriority(id, dir) {
+    const task = currentTask();
+    const order = [...getOrder(task)];
+    const idx = order.indexOf(id);
+    const target = idx + dir;
+    if (idx === -1 || target < 0 || target >= order.length) return;
+    [order[idx], order[target]] = [order[target], order[idx]];
+    setState({ priorities: { ...state.priorities, [task.n]: order } });
+  }
+
+  function bindRankList() {
+    const list = document.getElementById("rank-list");
+    if (!list) return;
+
+    list.querySelectorAll("[data-nudge]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = Number(btn.getAttribute("data-id"));
+        const dir = btn.getAttribute("data-nudge") === "up" ? -1 : 1;
+        nudgePriority(id, dir);
+      });
+    });
+
+    list.querySelectorAll("[data-drag-handle]").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => startDrag(e, handle.closest(".rank-item"), list));
+    });
+  }
+
+  function startDrag(e, item, list) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+
+    const task = currentTask();
+    const order = [...getOrder(task)];
+    const itemEls = Array.from(list.querySelectorAll(".rank-item"));
+    const rects = itemEls.map((el) => ({
+      id: Number(el.dataset.id),
+      el,
+      top: el.offsetTop,
+      height: el.offsetHeight,
+    }));
+    const startIndex = order.indexOf(Number(item.dataset.id));
+    if (startIndex === -1) return;
+
+    dragCtx = {
+      pointerId: e.pointerId,
+      order,
+      rects,
+      startIndex,
+      currentIndex: startIndex,
+      startY: e.clientY,
+      draggedId: Number(item.dataset.id),
+      draggedEl: item,
+      list,
+    };
+
+    item.classList.add("dragging");
+    item.style.transition = "none";
+    try {
+      item.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+
+    item.addEventListener("pointermove", handleDragMove);
+    item.addEventListener("pointerup", endDrag);
+    item.addEventListener("pointercancel", endDrag);
+  }
+
+  function handleDragMove(e) {
+    if (!dragCtx || e.pointerId !== dragCtx.pointerId) return;
+    const deltaY = e.clientY - dragCtx.startY;
+    dragCtx.draggedEl.style.transform = `translateY(${deltaY}px)`;
+
+    const draggedRect = dragCtx.rects[dragCtx.startIndex];
+    const draggedCenterNow = draggedRect.top + draggedRect.height / 2 + deltaY;
+
+    let newIndex = dragCtx.currentIndex;
+    let bestDist = Infinity;
+    dragCtx.rects.forEach((r, i) => {
+      const slotCenter = r.top + r.height / 2;
+      const dist = Math.abs(slotCenter - draggedCenterNow);
+      if (dist < bestDist) {
+        bestDist = dist;
+        newIndex = i;
+      }
+    });
+
+    if (newIndex !== dragCtx.currentIndex) {
+      const order = [...dragCtx.order];
+      const [movedId] = order.splice(dragCtx.currentIndex, 1);
+      order.splice(newIndex, 0, movedId);
+      dragCtx.order = order;
+      dragCtx.currentIndex = newIndex;
+    }
+
+    dragCtx.rects.forEach((r) => {
+      if (r.id === dragCtx.draggedId) return;
+      const slotIndex = dragCtx.order.indexOf(r.id);
+      const targetTop = dragCtx.rects[slotIndex].top;
+      const offset = targetTop - r.top;
+      r.el.style.transition = "transform 150ms ease";
+      r.el.style.transform = `translateY(${offset}px)`;
+    });
+  }
+
+  function endDrag(e) {
+    if (!dragCtx || e.pointerId !== dragCtx.pointerId) return;
+    const ctx = dragCtx;
+    dragCtx = null;
+
+    ctx.draggedEl.removeEventListener("pointermove", handleDragMove);
+    ctx.draggedEl.removeEventListener("pointerup", endDrag);
+    ctx.draggedEl.removeEventListener("pointercancel", endDrag);
+    try {
+      ctx.draggedEl.releasePointerCapture(ctx.pointerId);
+    } catch {
+      /* ignore */
+    }
+
+    ctx.rects.forEach((r) => {
+      r.el.style.transition = "";
+      r.el.style.transform = "";
+      r.el.classList.remove("dragging");
+    });
+
+    const task = currentTask();
+    setState({ priorities: { ...state.priorities, [task.n]: ctx.order } });
+  }
+
   function bindEvents() {
     const groupInput = document.getElementById("group-input");
     if (groupInput) {
       groupInput.addEventListener("input", (e) => {
-        state.group = e.target.value;
+        const digitsOnly = e.target.value.replace(/[^0-9]/g, "");
+        if (digitsOnly !== e.target.value) e.target.value = digitsOnly;
+        state.group = digitsOnly;
         saveState();
         const btn = document.getElementById("start-btn");
         if (btn) btn.disabled = !state.group.trim();
@@ -408,35 +553,18 @@
     if (startBtn) {
       startBtn.addEventListener("click", () => {
         if (!state.group.trim()) return;
-        setState({ screen: "brief", taskIndex: 0 });
+        setState({ screen: "brief", taskIndex: 0, priorities: { ...state.priorities, 1: [1, 2, 3] } });
         startTimer(TASKS[0].duration);
       });
     }
 
-    document.querySelectorAll("[data-scenario-id]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = Number(btn.getAttribute("data-scenario-id"));
-        const task = currentTask();
-        let priorities = [...(state.priorities[task.n] || [])];
-        if (priorities.includes(id)) {
-          priorities = priorities.filter((x) => x !== id);
-        } else if (priorities.length < 3) {
-          priorities.push(id);
-        }
-        const newPriorities = { ...state.priorities, [task.n]: priorities };
-        const finished = priorities.length === 3;
-        setState({ priorities: newPriorities });
-        if (finished && state.timerRunning) {
-          stopTimer(true);
-        }
-      });
-    });
+    bindRankList();
 
     const resetBtn = document.getElementById("reset-rank-btn");
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         const task = currentTask();
-        const newPriorities = { ...state.priorities, [task.n]: [] };
+        const newPriorities = { ...state.priorities, [task.n]: [1, 2, 3] };
         setState({ priorities: newPriorities });
       });
     }
@@ -473,7 +601,7 @@
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
         const task = currentTask();
-        const priorities = state.priorities[task.n] || [];
+        const priorities = getOrder(task);
         const motivation = state.motivations[task.n] || "";
         const message = buildMessage(task.n, state.group, priorities, motivation);
         const tag = document.getElementById("copied-tag");
@@ -501,10 +629,12 @@
         if (nextTask.newInfo) {
           scenarioUpdates[nextTask.newInfo.scenarioId] = nextTask.newInfo.text;
         }
+        const carriedOrder = getOrder(currentTask());
         setState({
           screen: "brief",
           taskIndex: nextIndex,
           scenarioUpdates,
+          priorities: { ...state.priorities, [nextTask.n]: carriedOrder },
         });
         startTimer(nextTask.duration);
       });

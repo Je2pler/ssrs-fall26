@@ -7,12 +7,16 @@
   --text: #dce6f0;
   --text-dim: #8ea0b5;
   --text-faint: #5c6d80;
-  --accent: #54e0c7;
-  --accent-dim: #2f6e63;
-  --accent-glow: rgba(84, 224, 199, 0.18);
-  --danger: #e0785a;
-  --danger-dim: #6e3f2f;
-  --danger-glow: rgba(224, 120, 90, 0.16);
+  /* SSRS grafisk profil: Pantone Process Blue */
+  --accent: #05a1e6;
+  --accent-dim: #114a63;
+  --accent-glow: rgba(5, 161, 230, 0.2);
+  /* SSRS grafisk profil: Pantone PMS 032 */
+  --danger: #ed114e;
+  --danger-dim: #6e1230;
+  --danger-glow: rgba(237, 17, 78, 0.18);
+  /* SSRS grafisk profil: Pantone 109C */
+  --brand-yellow: #fff200;
   --radius: 14px;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -108,35 +112,14 @@ body {
   gap: 10px;
 }
 
-.brand-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 1.5px solid var(--accent-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  box-shadow: 0 0 22px var(--accent-glow);
-}
-
-.brand-mark::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
-}
-
-.brand-mark::before {
-  content: "";
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  width: 1.5px;
-  height: 8px;
-  background: var(--accent-dim);
+.brand-kicker {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0;
 }
 
 .brand h1 {
@@ -311,7 +294,7 @@ button:disabled {
 }
 
 .timer.low .timer-value {
-  color: var(--danger);
+  color: var(--brand-yellow);
 }
 
 .timer.stopped .timer-value {
@@ -353,55 +336,119 @@ button:disabled {
   color: var(--text);
 }
 
-/* Scenario cards */
+/* Scenario cards / drag reorder list */
 .scenarios {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  touch-action: pan-y;
 }
 
-.scenario {
+.rank-item {
   position: relative;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px 14px 52px;
-  text-align: left;
-  cursor: pointer;
-  display: block;
-  width: 100%;
-  transition: border-color 0.2s, background 0.2s;
-}
-
-.scenario:active {
-  transform: scale(0.99);
-}
-
-.scenario.ranked {
-  border-color: var(--accent-dim);
   background: linear-gradient(180deg, var(--bg-elev-2), var(--bg-elev));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 12px 12px 12px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  will-change: transform;
 }
 
-.scenario-rank {
-  position: absolute;
-  left: 14px;
-  top: 14px;
-  width: 28px;
-  height: 28px;
+.rank-item.dragging {
+  z-index: 5;
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px var(--accent-glow);
+  cursor: grabbing;
+}
+
+.rank-badge {
+  flex: none;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent);
+  background: var(--bg-elev);
+  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 13px;
-  color: var(--text-faint);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
-.scenario.ranked .scenario-rank {
-  border-color: var(--accent);
+.rank-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.reorder-controls {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.drag-handle {
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--accent-dim);
+  background: var(--bg-elev-2);
   color: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+  background: var(--bg-elev);
+  border-color: var(--accent);
+}
+
+.grip-dots {
+  display: grid;
+  grid-template-columns: repeat(2, 5px);
+  grid-auto-rows: 5px;
+  gap: 4px;
+}
+
+.grip-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nudge-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nudge-btn {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.nudge-btn:disabled {
+  opacity: 0.25;
 }
 
 .scenario-title {
